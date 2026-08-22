@@ -2,6 +2,10 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // The JS -> TS migration is complete: src/ contains no JavaScript. Overriding
+    // expo/tsconfig.base's allowJs makes that a build error rather than a convention,
+    // so a stray .js file cannot quietly reappear.
+    "allowJs": false,
     // TypeScript 6 no longer auto-includes @types packages here. Setting this field opts
     // out of automatic inclusion entirely, so anything needed must be listed: "node" for
     // app.config.ts (process.env), "jest" for the test suite.

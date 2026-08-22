@@ -1,21 +1,20 @@
 import { registerRootComponent } from 'expo';
 
-import App from './src/App';
-
 /**
- * PHASE 3 will add here:
+ * Side-effect import: registers the geofence task at module scope.
  *
- *   import './src/tasks/geofenceTask';
+ * This must stay in THIS file, above registerRootComponent, and must not be imported
+ * anywhere else. When a fence fires with the app closed, Android boots the JS engine
+ * and looks for a task registered under a known name — with no mounted views and no
+ * React tree. A TaskManager.defineTask call inside a hook or component would not have
+ * run at that point, and the alarm would silently fail in exactly the situation the
+ * app exists for.
  *
- * That import must live at module scope in THIS file and must be a side-effect
- * import. When a geofence fires while the app is closed, Android boots the JS
- * engine and looks for a task registered under a known name — with no mounted
- * views and no React tree. A TaskManager.defineTask call placed inside a hook,
- * effect, or component would never have run at that point, and the alarm would
- * silently fail in exactly the situation the app exists for.
- *
- * Import it before registerRootComponent so registration is complete regardless
- * of whether the app was launched by the user or woken by the OS.
+ * Registering before the root component means it is in place whether the app was
+ * launched by the user or woken by the OS.
  */
+import './src/tasks/geofenceTask';
+
+import App from './src/App';
 
 registerRootComponent(App);

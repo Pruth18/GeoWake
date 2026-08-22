@@ -72,6 +72,25 @@ export type AlarmState = z.infer<typeof alarmStateSchema>;
 
 export const IDLE_STATE: AlarmState = { status: 'idle' };
 
+/**
+ * What the geofence decision produces.
+ *
+ * The decision itself is a pure function returning these; the task handler is a thin
+ * adapter that executes them. That split is the only reason the reliability-critical
+ * logic can be tested at all — it runs headless, on a real device, minutes into a
+ * commute, where nothing can be observed directly.
+ */
+export type AlarmEffect =
+  /** Write the new state so a later headless wake-up can read it. */
+  | { type: 'persistState'; state: AlarmState }
+  /** Fire the alarm. Delivery (channel, sound, full-screen intent) is Phase 4. */
+  | { type: 'startAlarm'; destination: Destination }
+  /** Deregister the region with the OS. Without this, re-entry re-fires the alarm. */
+  | { type: 'stopGeofencing'; reason: string }
+  | { type: 'log'; level: 'info' | 'warn' | 'error'; message: string; data?: LogData };
+
+export type LogData = Record<string, string | number | boolean | null | undefined>;
+
 /** The region identifier registered with the OS for the single armed alarm. */
 export const GEOFENCE_REGION_ID = 'geowake-destination';
 
