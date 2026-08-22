@@ -37,3 +37,10 @@ yarn-error.*
 
 app-example
 .env
+
+# EAS / store credentials — never commit these
+/secrets/
+*.keystore
+*.jks
+google-services.json
+play-service-account.json
