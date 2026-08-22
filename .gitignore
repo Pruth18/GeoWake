@@ -44,3 +44,6 @@ app-example
 *.jks
 google-services.json
 play-service-account.json
+
+# test output
+/coverage/
