@@ -1,50 +1,64 @@
-# Welcome to your Expo app 👋
+# GeoWake
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A location-based alarm for commuters. Pick a destination on a map, set an alert radius, and
+your phone wakes you when you arrive — so you can sleep, read, or zone out without missing
+your stop.
 
-## Get started
+Android-first. No backend, no account, no data leaves your device.
 
-1. Install dependencies
+## Status
 
-   ```bash
-   npm install
-   ```
+Migrating from a foreground-only MVP to a production Android release.
 
-2. Start the app
+| | |
+|---|---|
+| Expo SDK | 57 (RN 0.86.2, React 19.2.3) |
+| Health | `expo-doctor` 21/21, `tsc --noEmit` clean |
+| Works today | Map, destination picking, saved locations, settings |
+| Not yet working | **Background alarm** — fires only while the app is foregrounded |
 
-   ```bash
-    npx expo start
-   ```
+The background geofencing that makes the app actually useful is Phase 3. See
+[`docs/SETUP.md`](docs/SETUP.md) for what has to exist before the first on-device build.
 
-In the output, you'll find options to open the app in a
+## Getting started
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+npm install
+npx expo run:android      # requires Android SDK + a Google Maps key, see docs/SETUP.md
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+`npx expo start` alone is **not** enough for the alarm work: background location does not
+function in Expo Go, so a development build is required.
 
-## Learn more
+```sh
+npm run typecheck    # tsc --noEmit
+npm test             # jest
+npm run doctor       # expo-doctor
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## How it works
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```
+index.ts ──▶ src/App.tsx ──▶ src/navigation/AppNavigator
+                                   │
+              ┌────────────────────┼────────────────────┐
+            Home ──▶ Map ──▶ Alarm                  Settings
+         (saved      (pick a      (arrival
+          places)     point +      monitoring)
+                      radius)
+```
 
-## Join the community
+Destinations live in AsyncStorage as `{ id, name, address, latitude, longitude, radius }`.
+Arrival detection uses Android's native Geofencing API via `expo-location` +
+`expo-task-manager` — not a continuous location stream, which would drain the battery and,
+since 2026-08-26, no longer qualifies for a Play foreground-service declaration.
 
-Join our community of developers creating universal apps.
+## Documentation
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [`CLAUDE.md`](CLAUDE.md) — architecture constraints and conventions
+- [`docs/SETUP.md`](docs/SETUP.md) — toolchain, API keys, store accounts
+- [`docs/privacy-policy.md`](docs/privacy-policy.md) — draft policy (hosting required for Play)
+
+## License
+
+Not currently licensed for redistribution.
