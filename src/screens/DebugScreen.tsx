@@ -66,6 +66,11 @@ export default function DebugScreen() {
   }, []);
 
   useEffect(() => {
+    // False positive: refresh is async, so every setState inside it runs in a later
+    // microtask after the awaits, not synchronously during the effect. The rule cannot
+    // see through the async boundary. Silenced narrowly rather than by turning the
+    // rule off, because it catches real cascading renders elsewhere.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     const timer = setInterval(refresh, 3000);
     return () => clearInterval(timer);

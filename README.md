@@ -14,11 +14,12 @@ Migrating from a foreground-only MVP to a production Android release.
 |---|---|
 | Expo SDK | 57 (RN 0.86.2, React 19.2.3) |
 | Health | `expo-doctor` 21/21, `tsc --noEmit` clean |
-| Works today | Map, destination picking, saved locations, settings |
-| Not yet working | **Background alarm** — fires only while the app is foregrounded |
+| Tests | 213 passing, lint clean |
+| Works | Map, destination picking, **background arrival alarm**, sound, vibration, lock-screen alarm screen, debug tooling |
+| Unverified | Everything on **physical hardware** — no device build has been run yet |
 
-The background geofencing that makes the app actually useful is Phase 3. See
-[`docs/SETUP.md`](docs/SETUP.md) for what has to exist before the first on-device build.
+See [`docs/TESTING.md`](docs/TESTING.md) for how to verify it, and
+[`docs/SETUP.md`](docs/SETUP.md) for what must exist before the first device build.
 
 ## Getting started
 
@@ -57,6 +58,7 @@ since 2026-08-26, no longer qualifies for a Play foreground-service declaration.
 
 - [`CLAUDE.md`](CLAUDE.md) — architecture constraints and conventions
 - [`docs/SETUP.md`](docs/SETUP.md) — toolchain, API keys, store accounts
+- [`docs/TESTING.md`](docs/TESTING.md) — how to actually verify the alarm
 - [`docs/privacy-policy.md`](docs/privacy-policy.md) — draft policy (hosting required for Play)
 
 ## License

@@ -40,7 +40,6 @@ const LEGACY_KEYS = {
 export type StorageErrorReporter = (context: string, error: unknown) => void;
 
 let reportError: StorageErrorReporter = (context, error) => {
-  // eslint-disable-next-line no-console
   console.warn(`[storage] ${context}`, error);
 };
 

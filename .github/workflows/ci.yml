@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [master, production-hardening]
+  pull_request:
+    branches: [master]
+
+# A newer push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint, test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Expo SDK 57 requires 22.13+.
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx expo lint
+
+      - name: Test with coverage
+        # Thresholds are enforced in package.json and scoped to src/services and
+        # src/lib — see CLAUDE.md for why the gate is not global.
+        run: npx jest --coverage --ci
+
+      - name: Dependency health
+        run: npx expo-doctor
+
+      - name: Bundle for Android
+        # Catches anything that typechecks but cannot actually be bundled by Metro —
+        # a missing asset, a native module imported at the top level of a shared file.
+        run: npx expo export --platform android --output-dir /tmp/ci-export
+        env:
+          GOOGLE_MAPS_ANDROID_KEY: ci-placeholder-not-a-real-key
+
+  manifest:
+    name: Verify Android manifest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Generate native project
+        run: npx expo prebuild --platform android --no-install --clean
+        env:
+          GOOGLE_MAPS_ANDROID_KEY: ci-placeholder-not-a-real-key
+
+      - name: Assert no foreground service is declared
+        # The load-bearing compliance check. Google Play removed geofencing as an
+        # approved foreground-service use case on 2026-08-26, and expo-location's
+        # plugin re-enables the foreground service by DEFAULT whenever background
+        # location is on. A dependency bump could silently reintroduce it, and the
+        # symptom would be a rejected submission months later.
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if grep -q "FOREGROUND_SERVICE_LOCATION" "$MANIFEST"; then
+            echo "::error::FOREGROUND_SERVICE_LOCATION is back in the manifest."
+            echo "Check isAndroidForegroundServiceEnabled on the expo-location plugin."
+            exit 1
+          fi
+          if grep -q "foregroundServiceType" "$MANIFEST"; then
+            echo "::error::A foreground service is declared. GeoWake should need none."
+            grep -o 'android:foregroundServiceType="[^"]*"' "$MANIFEST"
+            exit 1
+          fi
+          echo "No foreground service declared."
+
+      - name: Assert the alarm can show over the lock screen
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          for attr in showWhenLocked turnScreenOn; do
+            if ! grep -q "android:$attr=\"true\"" "$MANIFEST"; then
+              echo "::error::MainActivity is missing android:$attr."
+              echo "plugins/withAlarmActivity.js did not apply."
+              exit 1
+            fi
+          done
+          echo "Lock-screen attributes present."
+
+      - name: Assert no microphone permission
+        # expo-audio's plugin adds RECORD_AUDIO by default. A commuter alarm asking
+        # for the microphone is a red flag to users and to Play review.
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if grep -q "RECORD_AUDIO" "$MANIFEST"; then
+            echo "::error::RECORD_AUDIO is in the manifest. Check recordAudioAndroid."
+            exit 1
+          fi
+          echo "No microphone permission."

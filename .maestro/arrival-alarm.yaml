@@ -1,0 +1,52 @@
+# Critical-flow E2E: pick a destination, arm it, and prove the arrival path fires.
+#
+# Maestro cannot drive a geofence — it has no way to move the device or fake a region
+# transition. It CAN drive the debug "Simulate arrival" control, which dispatches a
+# synthetic ENTER through the exact same handleGeofenceEvent path the OS calls. That
+# makes the debug affordance the E2E seam, not a shortcut around one.
+#
+# Requires a development or preview build (extra.enableDevTools true). Background
+# location does not work in Expo Go, so there is nothing to test there.
+#
+#   maestro test .maestro/arrival-alarm.yaml
+
+appId: com.pruth.geowake
+---
+- launchApp:
+    clearState: true
+    permissions:
+      location: allow
+      notifications: allow
+
+- assertVisible: 'Welcome to GeoWake'
+
+# --- arm an alarm from a debug fence at the current location -------------------
+- tapOn: 'Debug tools'
+- assertVisible: 'Development build only. These controls are stripped from production.'
+
+- tapOn: 'Arm a fence at my location'
+- assertVisible: 'Fence armed here'
+- tapOn: 'OK'
+
+# The OS should now be holding a region for us.
+- assertVisible:
+    text: 'yes'
+    below: 'Task registered'
+
+# --- fire a synthetic arrival through the real handler -------------------------
+- tapOn: 'Simulate arrival now'
+
+# The state machine must move armed -> triggered.
+- extendedWaitUntil:
+    visible:
+      text: 'triggered'
+      below: 'Status'
+    timeout: 10000
+
+# The event log is written from inside the task; its presence proves the handler ran
+# rather than something bypassing it.
+- assertVisible: 'Arrival detected'
+
+# --- the alarm must be dismissible ---------------------------------------------
+- back
+- assertVisible: 'Welcome to GeoWake'

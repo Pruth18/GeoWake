@@ -3,15 +3,15 @@
 Location-based alarm for commuters. Pick a destination on a map, set a radius, get woken on
 arrival. **No backend, no auth, no API** — everything is local to the device.
 
-Currently mid-migration from a foreground-only JS MVP to a production Android app.
-See `.claude/plans/` in the user's home for the full phased plan.
+Fully TypeScript, Expo SDK 57, background geofencing implemented and tested.
+Not yet verified on physical hardware — see `docs/TESTING.md`.
 
 ## Stack
 
-Expo SDK 57 (target; repo is mid-upgrade from 53) · React Native 0.86 · React 19.2 ·
-TypeScript (strict) · React Navigation v7 stack · react-native-maps · expo-location +
-expo-task-manager · expo-notifications · expo-audio · AsyncStorage · Jest + jest-expo +
-@testing-library/react-native.
+Expo SDK 57 · React Native 0.86.2 · React 19.2.3 · TypeScript (strict, `allowJs: false`)
+· React Navigation v7 stack · react-native-maps · expo-location + expo-task-manager ·
+expo-notifications · expo-audio · Sentry (optional) · AsyncStorage · Jest + jest-expo +
+@testing-library/react-native · Maestro.
 
 ## Architecture constraints — these are not style preferences
 
@@ -35,16 +35,28 @@ expo-task-manager · expo-notifications · expo-audio · AsyncStorage · Jest + 
 6. **The channel sound is the primary wake mechanism**, not `expo-audio`. Starting looping
    playback from a headless task with no Activity is fragile and audio focus can be denied.
    In-app audio only sustains the alarm once the Activity is up.
+7. **`expo-audio` must not request background playback.** It adds
+   `FOREGROUND_SERVICE_MEDIA_PLAYBACK` — the wrong Play category for an alarm, needing its
+   own declaration. `recordAudioAndroid` must stay false too, or the manifest asks for the
+   microphone. Both are asserted by CI against the generated manifest.
+8. **The debug affordances are the E2E seam.** Maestro cannot drive a geofence, so
+   `simulateArrival` dispatches through the real handler rather than shortcutting to the
+   alarm. Keep it that way or the E2E test stops proving anything.
 
 ## Commands
 
 ```
-npx expo run:android     # dev loop — use this, NOT eas build (native rebuild per plugin change)
-npx tsc --noEmit         # typecheck
-npx expo lint            # lint
-npx jest                 # tests
-npx expo-doctor          # dependency/config health
+npx expo run:android      # dev loop — NOT eas build (native rebuild per plugin change)
+npm run typecheck         # tsc --noEmit
+npm run lint              # expo lint
+npm test                  # jest (213 tests)
+npm run test:coverage     # enforces the scoped 80% gate
+npm run doctor            # expo-doctor
+maestro test .maestro/arrival-alarm.yaml
 ```
+
+`android/` and `ios/` are gitignored — Continuous Native Generation. A committed native
+directory silently stops config-plugin changes from applying.
 
 ## Conventions
 

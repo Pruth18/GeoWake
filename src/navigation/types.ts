@@ -22,8 +22,11 @@ export type RootStackScreenProps<T extends keyof RootStackParamList> = StackScre
  * See https://reactnavigation.org/docs/typescript/#specifying-default-types-for-usenavigation
  */
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace ReactNavigation {
+    // The empty extension IS the mechanism: React Navigation merges this declaration
+    // into its own RootParamList to type useNavigation globally. Adding members would
+    // defeat it.
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface RootParamList extends RootStackParamList {}
   }
 }

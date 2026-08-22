@@ -12,7 +12,7 @@ import {
 } from '../simulate';
 import { setAlarmStarter } from '../executeEffects';
 import { readLog } from '../../debugLog';
-import { loadAlarmState, saveAlarmState } from '../../storage';
+import { saveAlarmState } from '../../storage';
 import type { Destination } from '../../../types';
 
 const destination: Destination = {

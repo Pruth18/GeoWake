@@ -41,6 +41,24 @@ const config: ExpoConfig = {
   // Required for routing a notification tap back into the alarm screen.
   scheme: 'geowake',
 
+  /**
+   * EAS Update, for JS-only hotfixes without a store round-trip.
+   *
+   * The "appVersion" policy ties an update to the app version it was built against, so
+   * an update can never land on a binary with incompatible native code. Getting this
+   * wrong is the classic EAS Update failure — a JS bundle pushed to a build whose
+   * native modules do not match crashes on launch, and the fix requires a store review.
+   *
+   * Updates CANNOT change native code, dependencies, permissions or the SDK version,
+   * which describes most of the work in this repo. This is insurance, not a strategy.
+   */
+  runtimeVersion: { policy: 'appVersion' },
+  updates: {
+    // Never block the splash screen waiting for a download: an alarm app must open
+    // instantly, and a slow train-station connection must not delay it.
+    fallbackToCacheTimeout: 0,
+  },
+
   android: {
     // IRREVERSIBLE once published to Play. Confirm before the first store upload.
     package: 'com.pruth.geowake',
