@@ -11,6 +11,14 @@ export type HandleGeofenceInput = {
   payload: unknown;
   /** State as loaded from storage — the only thing a headless wake-up knows. */
   state: AlarmState;
+  /**
+   * Whether that state was actually readable. Defaults to true.
+   *
+   * A failed read yields `idle`, and an arrival while idle deregisters the fence. Acting
+   * on state we could not read would turn one transient storage failure into a
+   * permanently destroyed alarm.
+   */
+  stateReadOk?: boolean;
   /** Injected so the result is deterministic and testable. */
   now: number;
 };
@@ -24,7 +32,12 @@ export type HandleGeofenceInput = {
  * emulator. The task handler around it does nothing but read state, call this, and
  * execute what it returns.
  */
-export function handleGeofenceEvent({ payload, state, now }: HandleGeofenceInput): AlarmEffect[] {
+export function handleGeofenceEvent({
+  payload,
+  state,
+  now,
+  stateReadOk = true,
+}: HandleGeofenceInput): AlarmEffect[] {
   const envelope = asEnvelope(payload);
 
   if (envelope.error !== undefined && envelope.error !== null) {
@@ -61,6 +74,20 @@ export function handleGeofenceEvent({ payload, state, now }: HandleGeofenceInput
         level: 'info',
         message: 'Ignoring non-arrival geofence event',
         data: { eventType: event.eventType, status: state.status },
+      },
+    ];
+  }
+
+  // We could not read our own state, so `idle` here means "unknown", not "nothing
+  // armed". Do nothing: leaving a fence registered costs a wasted wake-up, whereas
+  // removing one the user is relying on costs them their stop, permanently.
+  if (!stateReadOk) {
+    return [
+      {
+        type: 'log',
+        level: 'error',
+        message: 'Arrival received but alarm state was unreadable; taking no action',
+        data: { region: event.region.identifier ?? null },
       },
     ];
   }

@@ -212,3 +212,55 @@ describe('purity', () => {
     expect(run(enterPayload(), armed)).toEqual(run(enterPayload(), armed));
   });
 });
+
+describe('unreadable state', () => {
+  /**
+   * The compounding failure this guards against.
+   *
+   * A failed storage read also yields `idle`, and an arrival while idle deregisters the
+   * fence as an orphan. Without distinguishing the two, ONE transient AsyncStorage
+   * failure would both miss the alarm and destroy it permanently — reconcile reads the
+   * same `idle` and would never re-arm it.
+   */
+  it('never tears down a fence when the state could not be read', () => {
+    const effects = handleGeofenceEvent({
+      payload: enterPayload(),
+      state: { status: 'idle' },
+      now: NOW,
+      stateReadOk: false,
+    });
+
+    expect(has(effects, 'stopGeofencing')).toBe(false);
+    expect(has(effects, 'startAlarm')).toBe(false);
+    expect(has(effects, 'persistState')).toBe(false);
+  });
+
+  it('reports the unreadable state as an error', () => {
+    const effects = handleGeofenceEvent({
+      payload: enterPayload(),
+      state: { status: 'idle' },
+      now: NOW,
+      stateReadOk: false,
+    });
+
+    const log = effects.find((e) => e.type === 'log');
+    expect(log && log.type === 'log' && log.level).toBe('error');
+  });
+
+  it('still tears down an orphan when the state was genuinely readable', () => {
+    // The contrast that makes the guard meaningful: a real idle IS cleaned up.
+    const effects = handleGeofenceEvent({
+      payload: enterPayload(),
+      state: { status: 'idle' },
+      now: NOW,
+      stateReadOk: true,
+    });
+
+    expect(has(effects, 'stopGeofencing')).toBe(true);
+  });
+
+  it('defaults to treating state as readable', () => {
+    const effects = handleGeofenceEvent({ payload: enterPayload(), state: armed, now: NOW });
+    expect(has(effects, 'startAlarm')).toBe(true);
+  });
+});

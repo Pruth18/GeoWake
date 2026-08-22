@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { appendLog } from './debugLog';
 import {
   alarmStateSchema,
   destinationSchema,
@@ -39,8 +40,17 @@ const LEGACY_KEYS = {
  */
 export type StorageErrorReporter = (context: string, error: unknown) => void;
 
+/**
+ * Defaults to the persisted log, not console.
+ *
+ * These reads run inside the headless geofence task, where console output is invisible
+ * and dies with the process. monitoring.ts upgrades this to also reach Sentry, but the
+ * default must already be useful in case that never runs.
+ */
 let reportError: StorageErrorReporter = (context, error) => {
-  console.warn(`[storage] ${context}`, error);
+  void appendLog('error', `Storage failure: ${context}`, {
+    error: error instanceof Error ? error.message : String(error),
+  });
 };
 
 export function setStorageErrorReporter(reporter: StorageErrorReporter): void {
@@ -194,26 +204,56 @@ export async function saveSettings(settings: AlarmSettings): Promise<void> {
  * in-memory store. This is the only channel through which a woken process learns what
  * the app was doing before it was killed.
  */
-export async function loadAlarmState(): Promise<AlarmState> {
+export type AlarmStateRead = {
+  state: AlarmState;
+  /**
+   * False when the stored value could not be read or parsed.
+   *
+   * This distinction is load-bearing. A failed read also yields IDLE_STATE, and an
+   * arrival while idle is treated as an orphaned region — which DEREGISTERS the fence.
+   * Without this flag, one transient AsyncStorage failure would both miss the alarm and
+   * permanently destroy it, and reconcile would never re-arm because it reads the same
+   * `idle`. Removing a fence must require positive evidence of idleness, never merely
+   * the absence of evidence.
+   */
+  ok: boolean;
+};
+
+export async function readAlarmState(): Promise<AlarmStateRead> {
   try {
     const raw = await AsyncStorage.getItem(KEYS.alarmState);
-    if (raw === null) return IDLE_STATE;
+    // Genuinely nothing stored — a real idle, not a failure.
+    if (raw === null) return { state: IDLE_STATE, ok: true };
 
     const result = alarmStateSchema.safeParse(JSON.parse(raw));
-    if (result.success) return result.data;
+    if (result.success) return { state: result.data, ok: true };
 
     reportError('loadAlarmState', result.error);
-    return IDLE_STATE;
+    return { state: IDLE_STATE, ok: false };
   } catch (error) {
     reportError('loadAlarmState', error);
-    return IDLE_STATE;
+    return { state: IDLE_STATE, ok: false };
   }
 }
 
-export async function saveAlarmState(state: AlarmState): Promise<void> {
+/** Convenience for UI callers, where a failed read and idle are equivalent. */
+export async function loadAlarmState(): Promise<AlarmState> {
+  return (await readAlarmState()).state;
+}
+
+/**
+ * Returns whether the write actually landed.
+ *
+ * Callers must not assume success: arming is transactional across the OS fence and our
+ * persisted state, and a silent write failure leaves the OS watching a region while our
+ * state says something else — which produces a missed alarm that looks healthy.
+ */
+export async function saveAlarmState(state: AlarmState): Promise<boolean> {
   try {
     await AsyncStorage.setItem(KEYS.alarmState, JSON.stringify(state));
+    return true;
   } catch (error) {
     reportError('saveAlarmState', error);
+    return false;
   }
 }

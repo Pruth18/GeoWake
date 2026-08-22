@@ -280,3 +280,91 @@ describe('startGeofenceReconciliation', () => {
     expect(removeListener).toHaveBeenCalled();
   });
 });
+
+describe('arming is transactional', () => {
+  /**
+   * Arming spans the OS fence and our persisted state with no transaction across them.
+   * A silent write failure would leave the OS watching a region while our state says
+   * otherwise — and on arrival the handler reads stale state and either ignores the
+   * event or tears the fence down. Both are silent misses.
+   */
+  it('rolls the fence back when state cannot be persisted', async () => {
+    jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));
+    mocked.hasStartedGeofencingAsync.mockResolvedValue(true);
+
+    await expect(armAlarm(destination)).rejects.toThrow(/could not save/i);
+
+    expect(mocked.stopGeofencingAsync).toHaveBeenCalled();
+  });
+
+  it('does not leave state claiming armed after a failed write', async () => {
+    jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));
+    mocked.hasStartedGeofencingAsync.mockResolvedValue(true);
+
+    await expect(armAlarm(destination)).rejects.toThrow();
+
+    expect((await loadAlarmState()).status).toBe('idle');
+  });
+});
+
+describe('reconcile refuses to guess', () => {
+  it('does nothing when the registration query fails', async () => {
+    mocked.hasStartedGeofencingAsync.mockRejectedValue(new Error('play services updating'));
+
+    await expect(reconcileGeofence()).resolves.toBe('unknown-registration');
+
+    // Previously coerced to `false`, which silently claimed "no fence registered".
+    expect(mocked.startGeofencingAsync).not.toHaveBeenCalled();
+    expect(mocked.stopGeofencingAsync).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed re-arm instead of losing the rejection', async () => {
+    await saveAlarmState({ status: 'armed', destination, armedAt: 1 });
+    mocked.hasStartedGeofencingAsync.mockResolvedValue(false);
+    mocked.startGeofencingAsync.mockRejectedValue(new Error('background location revoked'));
+
+    await expect(reconcileGeofence()).resolves.toBe('rearm-failed');
+
+    const entries = await readLog();
+    const failure = entries.find((e) => e.message.includes('NOT active'));
+    // The reboot-recovery path was previously an unhandled rejection behind `void`:
+    // the re-arm failed, nothing was logged, and state still claimed armed.
+    expect(failure?.level).toBe('error');
+  });
+});
+
+describe('unreadable state is never acted on', () => {
+  it('dismiss does nothing when state cannot be read', async () => {
+    await AsyncStorage.setItem('geowake.alarmState.v2', '{{{ corrupt');
+
+    await dismissAlarm();
+
+    const entries = await readLog();
+    expect(entries.some((e) => e.level === 'error')).toBe(true);
+  });
+
+  it('reconcile skips entirely when state cannot be read', async () => {
+    await AsyncStorage.setItem('geowake.alarmState.v2', '{{{ corrupt');
+    mocked.hasStartedGeofencingAsync.mockResolvedValue(true);
+
+    await expect(reconcileGeofence()).resolves.toBe('unknown-registration');
+    // Must not deregister on a guess — that would destroy a live alarm.
+    expect(mocked.stopGeofencingAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('reconciliation loop error handling', () => {
+  it('records a reconcile that throws instead of losing the rejection', async () => {
+    await saveAlarmState({ status: 'armed', destination, armedAt: 1 });
+    // Make the very first await inside reconcile blow up.
+    jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('storage exploded'));
+    mocked.hasStartedGeofencingAsync.mockResolvedValue(false);
+
+    const stop = startGeofenceReconciliation();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    stop();
+
+    const entries = await readLog();
+    expect(entries.some((e) => e.level === 'error')).toBe(true);
+  });
+});

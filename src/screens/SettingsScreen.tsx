@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-import { colors, radii, spacing } from '../theme';
+import { colors, radii, spacing, MIN_TOUCH_TARGET } from '../theme';
 import { formatDistance } from '../lib/geo';
 import {
   clearDestinations,
@@ -126,7 +126,9 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Alarm</Text>
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          Alarm
+        </Text>
 
         <View style={styles.row}>
           <Text style={styles.label}>Vibration</Text>
@@ -232,7 +234,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   label: { fontSize: 16, color: colors.text },
-  note: { fontSize: 13, color: colors.textMuted, marginTop: spacing.sm, lineHeight: 18 },
+  note: { fontSize: 13, color: colors.textMuted, marginTop: spacing.sm },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -245,7 +247,13 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 16, fontWeight: '600', color: colors.text },
   itemAddress: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   itemRadius: { fontSize: 12, color: colors.textFaint, marginTop: 2 },
+  // minHeight rather than hitSlop: hitSlop grows the touch rectangle but not the
+  // accessibility node bounds, so a TalkBack user exploring by touch would still have
+  // to land on the original ~33dp box. This one is destructive, so it matters more.
   deleteButton: {
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.sm,
@@ -256,6 +264,8 @@ const styles = StyleSheet.create({
   clearAllButton: {
     marginTop: spacing.md,
     paddingVertical: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.danger,

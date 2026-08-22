@@ -191,3 +191,42 @@ describe('canDeliverNotifications', () => {
     await expect(canDeliverNotifications()).resolves.toBe(false);
   });
 });
+
+describe('platform gating', () => {
+  it('skips channel creation off Android', async () => {
+    // Channels are an Android concept; calling this on iOS would throw.
+    jest.resetModules();
+    jest.doMock('react-native', () => ({ Platform: { OS: 'ios', select: (o: never) => o } }));
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fresh = require('../notifications') as typeof import('../notifications');
+    await fresh.ensureAlarmChannels();
+
+    expect(mocked.setNotificationChannelAsync).not.toHaveBeenCalled();
+    jest.dontMock('react-native');
+  });
+});
+
+describe('vibration option', () => {
+  it('omits the vibration pattern when vibration is off', async () => {
+    await presentArrivalNotification(destination, { sound: true, vibrate: false });
+
+    const [request] = mocked.scheduleNotificationAsync.mock.calls[0] ?? [];
+    expect(request?.content.vibrate).toEqual([]);
+  });
+
+  it('includes a pattern when vibration is on', async () => {
+    await presentArrivalNotification(destination, { sound: true, vibrate: true });
+
+    const [request] = mocked.scheduleNotificationAsync.mock.calls[0] ?? [];
+    expect((request?.content.vibrate as number[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('clearing when nothing is presented', () => {
+  it('is a no-op with no presented notifications', async () => {
+    mocked.getPresentedNotificationsAsync.mockResolvedValue([] as never);
+    await clearArrivalNotifications();
+    expect(mocked.dismissNotificationAsync).not.toHaveBeenCalled();
+  });
+});

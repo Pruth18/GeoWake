@@ -6,15 +6,22 @@ import { saveAlarmState } from '../storage';
 export type AlarmStarter = (destination: Destination) => Promise<void>;
 
 /**
- * Phase 4 replaces this with real delivery: a MAX-importance notification channel,
- * the alarm sound, vibration and the full-screen intent. Until then the decision and
- * state transition are complete and observable through the log, which is what the
- * Phase 3 gate needs.
+ * Deliberately throws.
+ *
+ * Real delivery is installed by registerAlarmDelivery() at module scope in index.ts.
+ * If this placeholder is ever reached, the wiring is broken and the alarm is silent —
+ * so it must surface as an ERROR through executeEffects' reporting, not as a warning
+ * that reads like an unfinished TODO.
+ *
+ * An earlier version logged a warning here instead. That made a completely silent
+ * alarm indistinguishable from a healthy one in the event log, because the state
+ * transition and "Arrival detected" were still written normally.
  */
 let startAlarmImpl: AlarmStarter = async (destination) => {
-  await appendLog('warn', 'Arrival reached but alarm delivery is not wired yet', {
-    destination: destination.name,
-  });
+  throw new Error(
+    `Alarm delivery is not registered — registerAlarmDelivery() did not run. ` +
+      `Arrival at "${destination.name}" produced no sound.`
+  );
 };
 
 export function setAlarmStarter(starter: AlarmStarter): void {

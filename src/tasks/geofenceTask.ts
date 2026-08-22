@@ -3,7 +3,7 @@ import * as TaskManager from 'expo-task-manager';
 import { handleGeofenceEvent } from '../services/alarm/handleGeofenceEvent';
 import { executeEffects } from '../services/alarm/executeEffects';
 import { appendLog } from '../services/debugLog';
-import { loadAlarmState } from '../services/storage';
+import { readAlarmState } from '../services/storage';
 import { GEOFENCE_TASK_NAME } from './constants';
 
 /**
@@ -22,8 +22,8 @@ import { GEOFENCE_TASK_NAME } from './constants';
  */
 TaskManager.defineTask(GEOFENCE_TASK_NAME, async (payload) => {
   try {
-    const state = await loadAlarmState();
-    const effects = handleGeofenceEvent({ payload, state, now: Date.now() });
+    const { state, ok } = await readAlarmState();
+    const effects = handleGeofenceEvent({ payload, state, now: Date.now(), stateReadOk: ok });
     await executeEffects(effects);
   } catch (error) {
     // The last line of defence. An exception escaping here is invisible: there is no

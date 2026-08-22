@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import MapView, { Circle, Marker, type LatLng } from 'react-native-maps';
 
-import { colors, mapOverlay, radii, spacing } from '../theme';
+import { colors, mapOverlay, radii, spacing, MIN_TOUCH_TARGET } from '../theme';
 import { formatDistance } from '../lib/geo';
 import { addDestination } from '../services/storage';
 import {
@@ -174,20 +174,32 @@ export default function MapScreen({ navigation }: RootStackScreenProps<'Map'>) {
           />
 
           <Text style={styles.radiusLabel}>Alert radius: {formatDistance(radius)}</Text>
-          <View style={styles.radiusRow}>
+          <View
+            style={styles.radiusRow}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Alert radius"
+          >
             {RADIUS_OPTIONS_M.map((option) => (
               <TouchableOpacity
                 key={option}
                 style={[styles.radiusButton, radius === option && styles.radiusButtonActive]}
                 onPress={() => setRadius(option)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: radius === option }}
+                /*
+                  radio + checked maps to RadioButton/setChecked, which TalkBack
+                  announces reliably. button + selected maps to setSelected, which it
+                  has never announced consistently.
+                */
+                accessibilityRole="radio"
+                accessibilityState={{ checked: radius === option }}
                 accessibilityLabel={`${formatDistance(option)} radius`}
+                // Attaches the reliability caveat to the option it applies to, rather
+                // than leaving it in a detached Text a screen reader never reaches.
+                accessibilityHint={RADIUS_NOTE[option]}
               >
                 <Text
                   style={[styles.radiusText, radius === option && styles.radiusTextActive]}
                 >
-                  {formatDistance(option)}
+                  {radius === option ? `✓ ${formatDistance(option)}` : formatDistance(option)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -243,6 +255,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
+    minHeight: MIN_TOUCH_TARGET,
     fontSize: 16,
     color: colors.text,
     marginBottom: spacing.md,
@@ -251,18 +264,29 @@ const styles = StyleSheet.create({
   radiusRow: { flexDirection: 'row', gap: spacing.sm },
   radiusButton: {
     flex: 1,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: radii.sm,
-    borderWidth: 1,
+    // Border width lives on the base style so selecting an option does not reflow the
+    // row, and so selection reads as fill + checkmark + border colour, not fill alone.
+    borderWidth: 2,
     borderColor: colors.border,
     alignItems: 'center',
   },
-  radiusButtonActive: { backgroundColor: colors.accent, borderColor: colors.accent },
+  radiusButtonActive: { backgroundColor: colors.accent, borderColor: colors.primary },
   radiusText: { color: colors.textMuted, fontWeight: '600' },
   radiusTextActive: { color: colors.onAccent },
   radiusNote: { marginTop: spacing.sm, fontSize: 12, color: colors.warning },
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  button: { flex: 1, paddingVertical: 14, borderRadius: radii.md, alignItems: 'center' },
+  button: {
+    flex: 1,
+    paddingVertical: 14,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+    borderRadius: radii.md,
+    alignItems: 'center',
+  },
   buttonDisabled: { opacity: 0.6 },
   saveButton: { backgroundColor: colors.accent },
   onceButton: { backgroundColor: colors.primary },

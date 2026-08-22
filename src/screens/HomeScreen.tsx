@@ -3,7 +3,7 @@ import * as Location from 'expo-location';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { colors, radii, spacing } from '../theme';
+import { colors, radii, spacing, MIN_TOUCH_TARGET } from '../theme';
 import { loadDestinations } from '../services/storage';
 import { formatDistance } from '../lib/geo';
 import type { Destination } from '../types';
@@ -74,7 +74,15 @@ export default function HomeScreen({ navigation }: RootStackScreenProps<'Home'>)
       style={styles.item}
       onPress={() => navigation.navigate('Alarm', { destination: item })}
       accessibilityRole="button"
-      accessibilityLabel={`Set alarm for ${item.name}, ${formatDistance(item.radius)} radius`}
+      // Includes the address: an accessibilityLabel overrides the children, so without
+      // it the address rendered below becomes unreachable to a screen reader.
+      accessibilityLabel={[
+        `Set alarm for ${item.name}`,
+        item.address,
+        `${formatDistance(item.radius)} radius`,
+      ]
+        .filter(Boolean)
+        .join(', ')}
     >
       <Text style={styles.itemName}>{item.name}</Text>
       {item.address ? <Text style={styles.itemAddress}>{item.address}</Text> : null}
@@ -85,7 +93,9 @@ export default function HomeScreen({ navigation }: RootStackScreenProps<'Home'>)
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Welcome to GeoWake</Text>
+        <Text style={styles.title} accessibilityRole="header">
+          Welcome to GeoWake
+        </Text>
         <Text style={styles.subtitle}>Never miss your stop again</Text>
       </View>
 
@@ -174,6 +184,8 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: colors.textMuted,
     paddingVertical: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: radii.md,
     alignItems: 'center',
   },

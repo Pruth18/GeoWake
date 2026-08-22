@@ -1,8 +1,11 @@
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  findNodeHandle,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,7 +13,7 @@ import {
 } from 'react-native';
 import MapView, { Circle, Marker } from 'react-native-maps';
 
-import { colors, mapOverlay, radii, spacing } from '../theme';
+import { colors, mapOverlay, radii, spacing, MIN_TOUCH_TARGET } from '../theme';
 import { distanceMeters, formatDistance } from '../lib/geo';
 import { armAlarm, disarmAlarm, dismissAlarm } from '../services/geofence';
 import { stopAlarmDelivery } from '../services/alarm/delivery';
@@ -22,9 +25,9 @@ import type { RootStackScreenProps } from '../navigation/types';
 /**
  * How often the screen re-reads persisted alarm state.
  *
- * Arrival is decided by the geofence task, which may run while this screen is not
- * even mounted. Storage is the only channel between that headless process and the UI,
- * so the screen polls rather than owning any detection logic of its own.
+ * Arrival is decided by the geofence task, which may run while this screen is not even
+ * mounted. Storage is the only channel between that headless process and the UI, so the
+ * screen polls rather than owning any detection logic of its own.
  */
 const STATE_POLL_MS = 2000;
 
@@ -38,15 +41,45 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
   const [alarmState, setAlarmState] = useState<AlarmState | null>(null);
   const [currentDistance, setCurrentDistance] = useState<number | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const dismissRef = useRef<View>(null);
+  const announcedRef = useRef(false);
 
-  // Arm once, on mount.
   useEffect(() => {
     let active = true;
 
     (async () => {
-      const permissions = await requestAlarmPermissions();
-      const blockers = blockersForArming(permissions);
+      const existing = await loadAlarmState();
+      if (!active) return;
+      setAlarmState(existing);
 
+      /**
+       * Reaching this screen from a notification tap means the alarm is ALREADY
+       * sounding. Arming again would put a spinner — and possibly a permission dialog —
+       * between a half-awake user and the only control they need, and would overwrite
+       * `triggered` with `armed`, which silently destroys the arrival record, prevents
+       * dismissAlarm from working, and re-registers a fence for a place the user is
+       * currently standing inside.
+       */
+      if (existing.status === 'triggered') {
+        setPhase('ready');
+        return;
+      }
+
+      let permissions;
+      try {
+        permissions = await requestAlarmPermissions();
+      } catch (error) {
+        if (!active) return;
+        // Previously outside the try block, so a rejection left the screen stuck on
+        // "Setting up your alarm…" forever with nothing logged.
+        setBlockedReason(
+          error instanceof Error ? error.message : 'Could not check location permissions.'
+        );
+        setPhase('failed');
+        return;
+      }
+
+      const blockers = blockersForArming(permissions);
       if (!active) return;
 
       if (blockers.length > 0) {
@@ -119,11 +152,36 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
     };
   }, []);
 
+  const hasArrived = alarmState?.status === 'triggered';
+
+  useEffect(() => {
+    if (!hasArrived || phase !== 'ready' || announcedRef.current) return;
+    announcedRef.current = true;
+
+    /**
+     * Two mechanisms, because neither alone covers the real path.
+     *
+     * accessibilityLiveRegion announces on CHANGE, not on mount — and the notification
+     * tap mounts this screen with hasArrived already true, so the live region is silent
+     * in exactly the scenario the app exists for. announceForAccessibility fires on a
+     * cold mount. setAccessibilityFocus then lands the reader on the stop control
+     * instead of making it swipe past an entire MapView to reach it.
+     */
+    AccessibilityInfo.announceForAccessibility(
+      `Arrived at ${destination.name}. Stop alarm button.`
+    );
+    const handle = findNodeHandle(dismissRef.current);
+    if (handle !== null) AccessibilityInfo.setAccessibilityFocus(handle);
+  }, [hasArrived, phase, destination.name]);
+
   const handleCancel = useCallback(() => {
-    Alert.alert('Cancel alarm', `Stop watching for ${destination.name}?`, [
+    // Deliberately never says "Stop alarm" — that phrase belongs only to the control
+    // that silences a ringing alarm. Using it for both invites a half-asleep user to
+    // press the wrong one from muscle memory.
+    Alert.alert('Stop watching?', `GeoWake will no longer wake you at ${destination.name}.`, [
       { text: 'Keep watching', style: 'cancel' },
       {
-        text: 'Cancel alarm',
+        text: 'Yes, stop watching',
         style: 'destructive',
         onPress: async () => {
           await stopAlarmDelivery('user-cancelled');
@@ -139,7 +197,6 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
     // immediately even if writing state is slow.
     await stopAlarmDelivery('user-dismissed');
     await dismissAlarm();
-    setAlarmState(await loadAlarmState());
     navigation.goBack();
   }, [navigation]);
 
@@ -155,7 +212,7 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
   if (phase === 'blocked' || phase === 'failed') {
     return (
       <View style={styles.centred}>
-        <Text style={styles.blockedTitle}>
+        <Text style={styles.blockedTitle} accessibilityRole="header">
           {phase === 'blocked' ? 'Permissions needed' : 'Could not start the alarm'}
         </Text>
         <Text style={styles.blockedBody}>{blockedReason}</Text>
@@ -170,8 +227,6 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
     );
   }
 
-  const hasArrived = alarmState?.status === 'triggered';
-
   return (
     <View style={styles.container}>
       <MapView
@@ -183,6 +238,11 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
           longitudeDelta: 0.05,
         }}
         showsUserLocation
+        // While the alarm is sounding the map is decoration. Removing it from the
+        // accessibility tree cuts the swipe distance to the stop control from roughly
+        // eight elements to one.
+        importantForAccessibility={hasArrived ? 'no-hide-descendants' : 'auto'}
+        accessibilityElementsHidden={hasArrived}
       >
         <Marker coordinate={destination} title={destination.name} pinColor="red" />
         <Circle
@@ -195,55 +255,83 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
       </MapView>
 
       <View style={styles.panel}>
-        <Text style={styles.destinationName}>{destination.name}</Text>
-        {destination.address ? (
-          <Text style={styles.destinationAddress}>{destination.address}</Text>
-        ) : null}
-
-        <View style={styles.statusRow}>
-          <Text style={styles.statusLabel}>Status</Text>
-          <Text
-            style={[styles.statusValue, hasArrived ? styles.arrived : styles.watching]}
-            accessibilityLiveRegion="polite"
-          >
-            {hasArrived ? 'ARRIVED' : 'Watching'}
-          </Text>
-        </View>
-
-        {currentDistance !== null && !hasArrived && (
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>Distance</Text>
-            <Text style={styles.statusValue}>{formatDistance(currentDistance)}</Text>
-          </View>
-        )}
-
-        <View style={styles.statusRow}>
-          <Text style={styles.statusLabel}>Alert radius</Text>
-          <Text style={styles.statusValue}>{formatDistance(destination.radius)}</Text>
-        </View>
-
-        <Text style={styles.reassurance}>
-          {hasArrived
-            ? 'You can stop the alarm now.'
-            : 'You can close GeoWake — the alarm will still go off.'}
-        </Text>
-
-        {hasArrived ? (
+        {/*
+          Rendered FIRST while ringing, and outside the ScrollView, so scaled text can
+          never push it below the fold. It was previously the last child of a
+          non-scrolling panel — at the largest Android font size the panel overflows and
+          the part that goes off-screen is whatever is last, i.e. this button.
+        */}
+        {hasArrived && (
           <TouchableOpacity
+            ref={dismissRef}
             style={styles.dismissButton}
             onPress={handleDismiss}
             accessibilityRole="button"
-            accessibilityLabel="Stop the alarm"
+            accessibilityLabel={`Stop the alarm for ${destination.name}`}
           >
-            <Text style={styles.dismissButtonText}>Stop alarm</Text>
+            {/* Capped so the button itself stays on screen; everything else scales freely. */}
+            <Text style={styles.dismissButtonText} maxFontSizeMultiplier={1.6}>
+              Stop alarm
+            </Text>
           </TouchableOpacity>
-        ) : (
+        )}
+
+        <ScrollView style={styles.details} contentContainerStyle={styles.detailsContent}>
+          <Text style={styles.destinationName} accessibilityRole="header">
+            {destination.name}
+          </Text>
+          {destination.address ? (
+            <Text style={styles.destinationAddress}>{destination.address}</Text>
+          ) : null}
+
+          <View
+            style={styles.statusRow}
+            accessible
+            accessibilityLabel={
+              hasArrived ? `Status: arrived at ${destination.name}` : 'Status: watching'
+            }
+            /*
+              Assertive, not polite. Polite queues behind current speech and is dropped
+              while the user is interacting — the right trade for a toast, the wrong one
+              for an alarm. This node changes exactly once and never back; the distance
+              readout below is deliberately NOT a live region, which is what keeps
+              assertive from becoming spam.
+            */
+            accessibilityLiveRegion="assertive"
+          >
+            <Text style={styles.statusLabel}>Status</Text>
+            <Text style={[styles.statusValue, hasArrived ? styles.arrived : styles.watching]}>
+              {hasArrived ? 'ARRIVED' : 'Watching'}
+            </Text>
+          </View>
+
+          {currentDistance !== null && !hasArrived && (
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Distance</Text>
+              <Text style={styles.statusValue}>{formatDistance(currentDistance)}</Text>
+            </View>
+          )}
+
+          <View style={styles.statusRow}>
+            <Text style={styles.statusLabel}>Alert radius</Text>
+            <Text style={styles.statusValue}>{formatDistance(destination.radius)}</Text>
+          </View>
+
+          <Text style={styles.reassurance}>
+            {hasArrived
+              ? 'You can stop the alarm now.'
+              : 'You can close GeoWake — the alarm will still go off.'}
+          </Text>
+        </ScrollView>
+
+        {!hasArrived && (
           <TouchableOpacity
             style={styles.cancelButton}
             onPress={handleCancel}
             accessibilityRole="button"
+            accessibilityLabel={`Stop watching for ${destination.name}`}
           >
-            <Text style={styles.cancelButtonText}>Cancel alarm</Text>
+            <Text style={styles.cancelButtonText}>Stop watching</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -269,11 +357,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     textAlign: 'center',
   },
+  // No fixed lineHeight: it does not scale with the user's font setting, so at large
+  // sizes the glyphs outgrow the line box and overlap. This is the permissions-failure
+  // explanation, so it has to stay readable.
   blockedBody: {
     fontSize: 15,
     color: colors.text,
     textAlign: 'center',
-    lineHeight: 22,
     marginBottom: spacing.lg,
   },
   panel: {
@@ -282,7 +372,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     elevation: 8,
+    // Bounded so the map never collapses entirely at large font sizes.
+    maxHeight: '75%',
   },
+  details: { flexShrink: 1 },
+  detailsContent: { paddingBottom: spacing.sm },
   destinationName: { fontSize: 22, fontWeight: 'bold', color: colors.primary },
   destinationAddress: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
   statusRow: {
@@ -304,8 +398,10 @@ const styles = StyleSheet.create({
   // Deliberately far larger than the 48dp minimum. This is pressed by someone who has
   // just been woken up on a moving train.
   dismissButton: {
-    marginTop: spacing.md,
+    marginBottom: spacing.md,
     paddingVertical: 24,
+    minHeight: MIN_TOUCH_TARGET * 1.5,
+    justifyContent: 'center',
     borderRadius: radii.md,
     backgroundColor: colors.danger,
     alignItems: 'center',
@@ -314,6 +410,8 @@ const styles = StyleSheet.create({
   cancelButton: {
     marginTop: spacing.md,
     paddingVertical: 14,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.danger,
@@ -322,6 +420,8 @@ const styles = StyleSheet.create({
   cancelButtonText: { color: colors.danger, fontWeight: '600', fontSize: 15 },
   secondaryButton: {
     paddingVertical: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xl,
     borderRadius: radii.md,
     backgroundColor: colors.primary,
