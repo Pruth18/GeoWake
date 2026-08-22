@@ -2,14 +2,16 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // TypeScript 6 no longer auto-includes @types/node here, and app.config.ts is a
+    // build-time Node file that reads process.env. Adding "jest" alongside it in Phase 2
+    // when the test suite lands — setting this field opts out of automatic inclusion, so
+    // every needed @types package must be listed.
+    "types": ["node"],
+    // Was "./*", which was written for the Expo Router scaffold that lived at the repo
+    // root. That scaffold is deleted; the app lives in src/.
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./src/*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx"
-  ]
+  "include": ["**/*.ts", "**/*.tsx"]
 }
