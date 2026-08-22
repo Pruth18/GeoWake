@@ -8,7 +8,8 @@ Android-first. No backend, no account, no data leaves your device.
 
 ## Status
 
-Migrating from a foreground-only MVP to a production Android release.
+Production-grade and ready for device testing. The background alarm is implemented,
+tested and lint-clean — but has not yet been run on physical hardware.
 
 | | |
 |---|---|
