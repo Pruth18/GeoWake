@@ -37,13 +37,25 @@ afterEach(async () => {
 });
 
 describe('startAlarmAudio', () => {
-  it('plays in silent mode and in the background', async () => {
+  it('plays in silent mode', async () => {
     await startAlarmAudio();
 
     // playsInSilentMode is a genuinely more permissive path than notification sound,
     // which respects the ringer switch.
     expect(mockedSetMode).toHaveBeenCalledWith(
-      expect.objectContaining({ playsInSilentMode: true, shouldPlayInBackground: true })
+      expect.objectContaining({ playsInSilentMode: true })
+    );
+  });
+
+  it('does NOT request background playback', async () => {
+    await startAlarmAudio();
+
+    // Background playback would require a mediaPlayback foreground service — the wrong
+    // Play category for an alarm, needing its own declaration. It is also unnecessary:
+    // the system plays the notification channel sound, which is what covers the
+    // backgrounded case. This asserts the permission surface stays small.
+    expect(mockedSetMode).toHaveBeenCalledWith(
+      expect.objectContaining({ shouldPlayInBackground: false })
     );
   });
 
