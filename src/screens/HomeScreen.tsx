@@ -7,6 +7,7 @@ import { colors, radii, spacing } from '../theme';
 import { loadDestinations } from '../services/storage';
 import { formatDistance } from '../lib/geo';
 import type { Destination } from '../types';
+import { devToolsEnabled } from '../config';
 import type { RootStackScreenProps } from '../navigation/types';
 
 export default function HomeScreen({ navigation }: RootStackScreenProps<'Home'>) {
@@ -117,6 +118,16 @@ export default function HomeScreen({ navigation }: RootStackScreenProps<'Home'>)
       >
         <Text style={styles.primaryButtonText}>Settings</Text>
       </TouchableOpacity>
+
+      {devToolsEnabled && (
+        <TouchableOpacity
+          style={styles.debugButton}
+          onPress={() => navigation.navigate('Debug')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.debugButtonText}>Debug tools</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -166,4 +177,13 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     alignItems: 'center',
   },
+  debugButton: {
+    marginTop: spacing.sm,
+    paddingVertical: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    alignItems: 'center',
+  },
+  debugButtonText: { color: colors.warning, fontSize: 13, fontWeight: '600' },
 });

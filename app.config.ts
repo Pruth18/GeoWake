@@ -16,6 +16,20 @@ const googleMapsApiKey = process.env.GOOGLE_MAPS_ANDROID_KEY ?? '';
  */
 const enableDevTools = process.env.EAS_BUILD_PROFILE !== 'production';
 
+/** Optional. Crash reporting is skipped entirely rather than failing the build. */
+const sentryOrg = process.env.SENTRY_ORG;
+const sentryProject = process.env.SENTRY_PROJECT;
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN ?? '';
+
+/**
+ * Only wired in when credentials exist, so a clone without them still builds. Without
+ * the plugin the SDK degrades to a no-op rather than failing at startup.
+ */
+const sentryPlugins: NonNullable<ExpoConfig['plugins']> =
+  sentryOrg && sentryProject
+    ? [['@sentry/react-native/expo', { organization: sentryOrg, project: sentryProject }]]
+    : [];
+
 const config: ExpoConfig = {
   name: 'GeoWake',
   slug: 'GeoWake',
@@ -81,13 +95,32 @@ const config: ExpoConfig = {
         backgroundColor: '#1E3A8A',
       },
     ],
-    // The custom alarm sound is added to this plugin in Phase 4, alongside the notification
-    // channel. Referencing a sound file that does not exist yet would fail prebuild.
-    'expo-notifications',
+    [
+      'expo-notifications',
+      {
+        /**
+         * Bundles the file into res/raw so the notification channel can reference it
+         * by BARE FILENAME ("alarm.wav") — a path does not resolve there. The channel
+         * sound is the primary wake-up mechanism, not expo-audio: it is played by the
+         * system, so it works even when our JS process is not alive to play anything.
+         */
+        sounds: ['./assets/sounds/alarm.wav'],
+      },
+    ],
+    [
+      'expo-audio',
+      {
+        // Lets the sustained alarm keep playing once the Activity is up and the user
+        // has not yet dismissed it.
+        microphonePermission: false,
+      },
+    ],
+    ...sentryPlugins,
   ],
 
   extra: {
     enableDevTools,
+    sentryDsn,
   },
 };
 

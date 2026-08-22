@@ -8,6 +8,8 @@ export type RootStackParamList = {
   /** Carries the destination to monitor. Phase 3 also reaches this from a notification tap. */
   Alarm: { destination: Destination };
   Settings: undefined;
+  /** Development and internal builds only — see app.config.ts extra.enableDevTools. */
+  Debug: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = StackScreenProps<

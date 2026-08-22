@@ -13,6 +13,7 @@ import MapView, { Circle, Marker } from 'react-native-maps';
 import { colors, mapOverlay, radii, spacing } from '../theme';
 import { distanceMeters, formatDistance } from '../lib/geo';
 import { armAlarm, disarmAlarm, dismissAlarm } from '../services/geofence';
+import { stopAlarmDelivery } from '../services/alarm/delivery';
 import { blockersForArming, requestAlarmPermissions } from '../services/permissions';
 import { loadAlarmState } from '../services/storage';
 import type { AlarmState } from '../types';
@@ -125,6 +126,7 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
         text: 'Cancel alarm',
         style: 'destructive',
         onPress: async () => {
+          await stopAlarmDelivery('user-cancelled');
           await disarmAlarm('user-cancelled');
           navigation.goBack();
         },
@@ -133,6 +135,9 @@ export default function AlarmScreen({ navigation, route }: RootStackScreenProps<
   }, [destination.name, navigation]);
 
   const handleDismiss = useCallback(async () => {
+    // Silence first, record second: the user pressed stop, so the noise must end
+    // immediately even if writing state is slow.
+    await stopAlarmDelivery('user-dismissed');
     await dismissAlarm();
     setAlarmState(await loadAlarmState());
     navigation.goBack();
