@@ -14,7 +14,8 @@ const googleMapsApiKey = process.env.GOOGLE_MAPS_ANDROID_KEY ?? '';
  * Debug affordances (simulate-arrival, geofence event log, registry inspector).
  * On for development and internal/preview builds, stripped from production.
  */
-const enableDevTools = process.env.EAS_BUILD_PROFILE !== 'production';
+const isProduction = process.env.EAS_BUILD_PROFILE === 'production';
+const enableDevTools = !isProduction;
 
 /** Optional. Crash reporting is skipped entirely rather than failing the build. */
 const sentryOrg = process.env.SENTRY_ORG;
@@ -51,6 +52,22 @@ const config: ExpoConfig = {
     config: {
       googleMaps: { apiKey: googleMapsApiKey },
     },
+    /**
+     * Stripped from the merged manifest. Both come from expo-file-system, pulled in
+     * transitively; GeoWake never touches the filesystem, and unused storage
+     * permissions are a needless prompt and a needless line on the data safety form.
+     */
+    blockedPermissions: [
+      'android.permission.READ_EXTERNAL_STORAGE',
+      'android.permission.WRITE_EXTERNAL_STORAGE',
+      /**
+       * Declared by React Native core for its dev-time overlay (redbox, dev menu).
+       * Play treats "draw over other apps" as sensitive and GeoWake never uses it —
+       * but blocking it in development would break the redbox, so it is stripped from
+       * production builds only.
+       */
+      ...(isProduction ? ['android.permission.SYSTEM_ALERT_WINDOW'] : []),
+    ],
     permissions: [
       // Location permissions are contributed by the expo-location plugin below.
       // These two are ours and are not plugin-managed:
@@ -110,11 +127,33 @@ const config: ExpoConfig = {
     [
       'expo-audio',
       {
-        // Lets the sustained alarm keep playing once the Activity is up and the user
-        // has not yet dismissed it.
         microphonePermission: false,
+        /**
+         * Both default to true, and both were verified against the generated manifest.
+         *
+         * recordAudioAndroid adds RECORD_AUDIO — a microphone permission on a commuter
+         * alarm, which is a privacy red flag to any user who reads the permission list
+         * and an awkward line on the Play data safety form. We never record anything.
+         *
+         * enableBackgroundPlayback adds FOREGROUND_SERVICE +
+         * FOREGROUND_SERVICE_MEDIA_PLAYBACK and a mediaPlayback foreground service.
+         * That is the wrong Play category for an alarm and would need its own
+         * foreground-service declaration. It is also unnecessary here: the SYSTEM plays
+         * the notification channel sound, which is the actual wake-up and works with
+         * our process dead. expo-audio only sustains the alarm once the Activity is up,
+         * so it never needs to play in the background.
+         */
+        recordAudioAndroid: false,
+        enableBackgroundPlayback: false,
+        enableBackgroundRecording: false,
       },
     ],
+    /**
+     * Local plugin: lets the alarm screen appear over the lock screen and turn the
+     * display on. See plugins/withAlarmActivity.js for what it deliberately does not
+     * do (a true full-screen intent needs native work, deferred until dogfooding).
+     */
+    './plugins/withAlarmActivity',
     ...sentryPlugins,
   ],
 

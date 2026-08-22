@@ -27,7 +27,10 @@ export async function startAlarmAudio(
       // active session. This is a genuinely different and more permissive path
       // than notification sound, which respects the ringer.
       playsInSilentMode: true,
-      shouldPlayInBackground: true,
+      // Deliberately false. Background playback would require a mediaPlayback
+      // foreground service — the wrong Play category for an alarm — and is
+      // unnecessary: the system-played channel sound covers the backgrounded case.
+      shouldPlayInBackground: false,
       // Ducking or mixing would let podcast audio bury the alarm.
       interruptionMode: 'doNotMix',
       shouldRouteThroughEarpiece: false,
